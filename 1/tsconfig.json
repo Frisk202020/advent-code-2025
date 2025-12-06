@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2020",                       // Modern JavaScript (broad browser support)
+    "module": "es2020",                       // For ES module syntax in modern browsers
+    "outDir": ".",                        // Output directory for compiled JS
+    "rootDir": ".",                       // Root folder for TypeScript source files
+    "strict": true,                        // Enable all strict type-checking options
+    "forceConsistentCasingInFileNames": false,
+    "skipLibCheck": true,
+  },
+  "include": ["."],               // Include all .ts files in src/
+  "exclude": []
+}
