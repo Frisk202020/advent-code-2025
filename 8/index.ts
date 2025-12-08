@@ -16,16 +16,17 @@ enum File {
     if (x === "test") { return File.Test; }
     else if (x === "data") { return File.Data; }
     else { throw new Error("Invalid part"); }
-} 
+}
 
 interface SolveParams {
     file_path: string,
-    connections: number
+    connections: number,
+    nBoxes: number
 } function getParams(x: File): SolveParams {
     if (x === File.Test) {
-        return {file_path: "test.md", connections: 10};
+        return {file_path: "test.md", connections: 10, nBoxes: 20};
     }
-    return {file_path: "data.md", connections: 1000};
+    return {file_path: "data.md", connections: 1000, nBoxes: 1000};
 }
  
 interface Distance {
@@ -40,6 +41,27 @@ function clusters(sorted_map: Distance[], connections: number): Set<number>[] {
     }
 
     return out;
+} 
+
+interface RichDistance {
+    id1: number,
+    id2: number,
+    xProduct: number,
+    d: number
+}
+
+function clusters2(sorted_map: RichDistance[], nBoxes: number): number {
+    const l: Set<number>[] = [];
+    add_to_cluster(sorted_map[0], l);
+    let i = 0;
+
+    // last comparaison is equivalent to check if network is entirely connected as values in it are unique
+    while (i < sorted_map.length-1 && l[0].size < nBoxes) {
+        i++;
+        add_to_cluster(sorted_map[i], l);        
+    }
+
+    return sorted_map[i].xProduct;
 }
 function add_to_cluster(candidate: Distance, list: Set<number>[]) {
     let cluster_for_id1 = -1;
@@ -101,6 +123,9 @@ class Box {
         const c = clusters(distance_map, connections).sort((a, b)=>b.size - a.size);
 
         return c[0].size * c[1].size * c[2].size;
+    } static solve2(x: Box[], nBoxes: number): number {
+        const distance_map = Box.#computeRichDistanceMap(x).sort((a,b)=>a.d - b.d);
+        return clusters2(distance_map, nBoxes);
     }
     
     static #normComponent(x1: number, x2: number): number {
@@ -111,6 +136,16 @@ class Box {
             for (let j = i+1; j < x.length; j++) {
                 const d = x[i].#computeDistance(x[j]);
                 out.push({id1: x[i].#id, id2: x[j].#id, d});
+            }
+        }
+
+        return out;
+    } static #computeRichDistanceMap(x: Box[]): RichDistance[] {
+        const out: RichDistance[] = [];
+        for (let i = 0; i < x.length; i++) {
+            for (let j = i+1; j < x.length; j++) {
+                const d = x[i].#computeDistance(x[j]);
+                out.push({id1: x[i].#id, id2: x[j].#id, d, xProduct: x[i].#x * x[j].#x});
             }
         }
 
@@ -148,9 +183,12 @@ function open_file(path: string): Box[] {
 function main() {
     if (process.argv.length < 4) { throw new Error("Need path & patrt args"); }
     const params = getParams(parseFile(process.argv[2]));
+    const part = parsePart(process.argv[3]);
 
     const boxes = open_file(params.file_path);
-    console.log("Output: " + Box.solve(boxes,params.connections));
+    console.log(`Output: ${
+        part === Part.One ? Box.solve(boxes,params.connections) : Box.solve2(boxes, params.nBoxes)
+    }`);
 }
 
 main();
