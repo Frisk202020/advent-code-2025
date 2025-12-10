@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { Point } from "./shared.js";
-import { GreenTiles } from "./part2.js";
+import { solve2 } from "./part2.js";
 
 enum Part {
     One,
@@ -11,21 +11,21 @@ enum Part {
     else { throw new Error("Invalid part"); }
 }
 
-function solve2(data: Point[]) {
-    const greenTiles = GreenTiles.fromRedTiles(data);
+// function solve2(data: Point[]) {
+//     const greenTiles = GreenTiles.fromRedTiles(data);
 
-    let maxArea = 0;
-    for (let i = 0; i < data.length; i++) {
-        for (let j = i+1; j < data.length; j++) {
-            const A = data[i]; const B = data[j];
-            if (!greenTiles.isRectangleValid(A, B)) { continue; }
+//     let maxArea = 0;
+//     for (let i = 0; i < data.length; i++) {
+//         for (let j = i+1; j < data.length; j++) {
+//             const A = data[i]; const B = data[j];
+//             if (!greenTiles.isRectangleValid(A, B)) { continue; }
 
-            maxArea = Math.max(maxArea, A.getRectangleArea(B));
-        }
-    }
+//             maxArea = Math.max(maxArea, A.getRectangleArea(B));
+//         }
+//     }
 
-    return maxArea;
-}
+//     return maxArea;
+// }
 
 function open_file(path: string): Point[] {
     const data = readFileSync(path).toString()

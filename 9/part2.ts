@@ -1,5 +1,5 @@
 import { inspect } from "util";
-import { getMinMax, type MinMax, Point } from "./shared.js";
+import { getMinMax, MinMax, Point } from "./shared.js";
 
 class Interval {
     #from: number;
@@ -11,176 +11,90 @@ class Interval {
         return new Interval(x.min, x.max);
     }
 
-    // where from <= to
-    #includes(other: Interval) {
-        return other.#from >= this.#from && other.#to <= this.#to;
-    } static includedInArray(arr: Interval[], candidate: Interval) {
-        return arr.some((x)=>x.#includes(candidate));
-    }
-
     [inspect.custom]()  {
         return `{${this.#from}, ${this.#to}}`;
     }
 
-    // for sort() on Interval[]
-    compare(other: Interval) {
-        return this.#from - other.#from;
+    contains(x: number) {
+        return x > this.#from && x < this.#to;
+    }
+}
+
+class BorderMap {
+    inner: Map<number, Interval[]>;
+
+    constructor() {
+        this.inner = new Map();
     }
 
-    // assumes arr is sorted by #from
-    // @return : if merge happened 
-    // The idea is that we stop at first array mutation, to continue in fresh loop
-    static tryMergeArray(arr: Interval[]) {
-        for (let i = 0; i < arr.length - 1; i++) {
-            if (Interval.#tryMerge(arr, i, i+1)) { 
-                return true;
+    add(k: number, v: Interval) {
+        const x = this.inner.get(k);
+        if (x === undefined) {
+            this.inner.set(k, [v]);
+        } else {
+            x.push(v);
+        }
+    }
+
+    contains(k: number, v: number) {
+        const val = this.inner.get(k);
+        if (val === undefined) { return false; }
+
+        return val.some((x)=>x.contains(v));
+    }
+}
+
+class Borders {
+    #borders_by_x: BorderMap;
+    #borders_by_y: BorderMap;
+
+    constructor(x: BorderMap, y: BorderMap) {
+        this.#borders_by_x = x; this.#borders_by_y = y;
+    } static fromRedTiles(tiles: Point[]) {
+        const X: BorderMap = new BorderMap(); const Y = new BorderMap();
+        for (let i = 0; i < tiles.length; i++) {
+            const p1 = tiles[i]; const p2 = tiles[(i+1)%tiles.length];
+
+            if (p1.x === p2.x) {
+                X.add(p1.x, Interval.fromMinMax(getMinMax(p1.y, p2.y)));
+            } else {
+                Y.add(p1.y, Interval.fromMinMax(getMinMax(p1.x, p2.x)));
             }
         }
 
-        return false;
-    } 
+        return new Borders(X, Y);
+    }
 
-    // @return : if merge happened
-    static #tryMerge(arr: Interval[], i1: number, i2: number): boolean {
-        if (arr[i1].#to < arr[i2].#from) { return false; }
+    isRectangleValid(a: Point, b: Point) {
+        const i_x = getMinMax(a.x, b.x);
+        const i_y = getMinMax(a.y, b.y);
+        for (const x of [i_x.min+1, i_x.max-1]) {
+            for (let y = i_y.min+1; y < i_y.max-1; y++) {
+                if (this.#borders_by_y.contains(y, x)) { return false; }
+            }
+        }
+        for (const y of [i_y.min+1, i_y.max-1]) {
+            for (let x = i_x.min+1; x <= i_x.max-1; x++) {
+                if (this.#borders_by_x.contains(x, y)) { return false; }
+            }
+        }
 
-        const int = new Interval(arr[i1].#from, Math.max(arr[i2].#to, arr[i1].#to));
-        arr[i1] = int;
-        arr.splice(i2, 1);
         return true;
     }
 }
 
-type GreenMap = Map<number, Interval[]>;
-type PeerMap = Map<number, number>;
-export class GreenTiles {
-    #valid_by_x: GreenMap;
-    #valid_by_y: GreenMap;
-    
-    constructor(x: GreenMap, y: GreenMap) {
-        this.#valid_by_x = x; this.#valid_by_y = y;
-    }
+export function solve2(redTiles: Point[]) {
+    const borders = Borders.fromRedTiles(redTiles);
 
-    isRectangleValid(a: Point, b: Point) {
-        const minMaxX = getMinMax(a.x, b.x); const i_x = Interval.fromMinMax(minMaxX);
-        const minMaxY = getMinMax(a.y, b.y); const i_y = Interval.fromMinMax(minMaxY);
-        for (const x of [
-            {i: i_x, ref: this.#valid_by_y.get(a.y)},
-            {i: i_x, ref: this.#valid_by_y.get(b.y)},
-            {i: i_y, ref: this.#valid_by_x.get(a.x)},
-            {i: i_y, ref: this.#valid_by_x.get(b.x)}
-        ]) {
-            if (x.ref === undefined || !Interval.includedInArray(x.ref, x.i)) {
-                return false;
-            }
-        }
+    let maxArea = 0;
+    for (let i = 0; i < redTiles.length; i++) {
+        for (let j = i+1; j < redTiles.length; j++) {
+            const A = redTiles[i]; const B = redTiles[j];
+            if (!borders.isRectangleValid(A, B)) { continue; }
 
-        return true;
-    }
-
-    /*
-        The idea for finding inner area is to build it while building borders. 
-        The idea is the following :
-            - while adding a valid point from a border, we check if it can connect if an already-verified peer (from past borders)
-            If found: mark all the interval valid (orthogonal w.r.t border direction)
-            Else: mark as peer waitinng for connection
-
-            - red tiles are a special case. A tile from which a border starts is marked as accepting connections except if 
-            at least one point of the current border connects to a peer (try it to vizualize)
-
-            - when all green tiles are in place we have that a rectangle is valid iif all its edges are valid, i-e are 
-            a sub-interval if valid intervals
-        
-        Last given answer is was still too high so there's edge cases I'm missing
-    */
-    static fromRedTiles(tiles: Point[]): GreenTiles {
-        const X: GreenMap = new Map(); const Y: GreenMap = new Map();
-        const peers_by_x: PeerMap = new Map(); const peers_by_y: PeerMap = new Map();
-
-        for (let i = 0; i < tiles.length; i++) {
-            const p1 = tiles[i]; const p2 = tiles[(i+1) % tiles.length];
-
-            if (p1.x === p2.x) {
-                const minMax = getMinMax(p1.y, p2.y);
-                GreenTiles.#addToMap(X, p1.x, Interval.fromMinMax(minMax));
-
-                let redTileIsOpenForConnection = true;
-                const y = minMax.min;
-                const peer = peers_by_y.get(y);
-                if (peer !== undefined) {
-                    GreenTiles.#connection(p1.x, peer, y, Y, peers_by_y)
-                }
-                for (let y = minMax.min + 1; y < minMax.max; y++) {
-                    const peer = peers_by_y.get(y);
-                    if (peer === undefined) {
-                        // open for connection
-                        peers_by_y.set(y, p1.x);
-                    } else {
-                        // connection
-                        GreenTiles.#connection(p1.x, peer, y, Y, peers_by_y);
-                        redTileIsOpenForConnection = false;
-                    }
-                }
-
-                if (redTileIsOpenForConnection) {
-                    peers_by_y.set(y, p1.x);
-                }
-            } else if (p1.y === p2.y) {
-                const minMax = getMinMax(p1.x, p2.x);
-                GreenTiles.#addToMap(Y, p1.y,Interval.fromMinMax(minMax));
-
-                let redTileIsOpenForConnection = true;
-                const x = minMax.min;
-                const peer = peers_by_x.get(x);
-                if (peer !== undefined) {
-                    GreenTiles.#connection(p1.y, peer, x, X, peers_by_x);
-                }
-                for (let x = minMax.min + 1; x < minMax.max; x++) {
-                    const peer = peers_by_x.get(x);
-                    if (peer === undefined) {
-                        peers_by_x.set(x, p1.y);
-                    } else {
-                        // connection
-                        GreenTiles.#connection(p1.y, peer, x, X, peers_by_y);
-                        redTileIsOpenForConnection = false;
-                    }
-                }
-
-                if (redTileIsOpenForConnection) {
-                    peers_by_x.set(x, p1.y);
-                }
-            } else {
-                throw new Error(`Found two red tiles with no coordinate in common: ${p1}, ${p2}`);
-            }
-        }
-
-        console.log(X.entries());
-        GreenTiles.#postProcessing(X); GreenTiles.#postProcessing(Y);
-        console.log(X.entries());
-        return new GreenTiles(X, Y);
-    }
-
-    static #postProcessing(x: GreenMap) {
-        for (const k of x.keys()) {
-            const v = x.get(k)!.sort((a, b)=>a.compare(b));
-            while (Interval.tryMergeArray(v)) {}
-
-            x.set(k, v);
+            maxArea = Math.max(maxArea, A.getRectangleArea(B));
         }
     }
 
-    static #connection(peer1: number, peer2: number, key: number, tileMap: GreenMap, PeerMap: PeerMap) {
-        const minMax = getMinMax(peer1, peer2);
-        GreenTiles.#addToMap(tileMap, key, Interval.fromMinMax(minMax));
-        PeerMap.delete(key);
-    }
-
-    static #addToMap(map: GreenMap, k: number, x: Interval) {
-        const v = map.get(k);
-        if (v === undefined) {
-            map.set(k, [x]);
-        } else {
-            v.push(x);
-        }
-    }
+    return maxArea;
 }
